@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Task Switch Chess Clock v3</title>
+<style>
+:root{--bg:#0f1115;--panel:#171b22;--border:#2a3140;--text:#e8edf5;--muted:#97a3b6}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,sans-serif}
+header{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--border)}
+button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px 14px;cursor:pointer}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.small{color:var(--muted);font-size:13px}
+main{padding:12px}
+.canvas-wrap{height:60vh;min-height:450px;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--panel)}
+canvas{width:100%;height:100%;display:block}
+.panel{margin-top:12px;border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--panel)}
+table{width:100%;border-collapse:collapse}
+th,td{padding:8px;border-bottom:1px solid var(--border);text-align:left}
+.statbar{display:flex;gap:24px;flex-wrap:wrap;color:var(--muted);margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+<div>
+<h2 style="margin:0">Task Switch Chess Clock v3</h2>
+<div class="small">Space=Switch • S=Start/Pause • R=Reset • F=Fullscreen</div>
+<div class="statbar">
+<span id="switchCount">Switches: 0</span>
+<span id="activeLabel">Active: A</span>
+</div>
+</div>
+<div class="controls">
+<button id="startBtn">▶ Start</button>
+<button id="resetBtn">🔄 Reset</button>
+<button id="fullscreenBtn">🖥 Fullscreen</button>
+<button id="csvBtn">📥 CSV</button>
+</div>
+</header>
+
+<main>
+<div class="canvas-wrap"><canvas id="c"></canvas></div>
+
+<div class="panel">
+<h3>Recent Switches</h3>
+<table>
+<thead><tr><th>#</th><th>Time</th><th>From</th><th>To</th><th>Duration</th></tr></thead>
+<tbody id="log"></tbody>
+</table>
+</div>
+</main>
+
+<script>
+const KEY='clock_v3';
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+const logBody=document.getElementById('log');
+
+let state=JSON.parse(localStorage.getItem(KEY)||'null')||{
+running:false,activeTask:'A',taskA:0,taskB:0,log:[]
+};
+state.running=false;
+state.lastTick=null;
+
+function save(){
+ localStorage.setItem(KEY,JSON.stringify({
+  activeTask:state.activeTask,
+  taskA:state.taskA,
+  taskB:state.taskB,
+  log:state.log
+ }));
+}
+
+function fmt(ms){
+ let h=Math.floor(ms/3600000),
+ m=Math.floor(ms%3600000/60000),
+ s=Math.floor(ms%60000/1000),
+ x=Math.floor(ms%1000);
+ return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(x).padStart(3,'0')}`;
+}
+
+function stamp(){
+ const d=new Date();
+ return d.toLocaleTimeString([],{
+  hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'
+ })+'.'+String(d.getMilliseconds()).padStart(3,'0');
+}
+
+function commit(){
+ if(!state.running||state.lastTick==null)return;
+ const d=performance.now()-state.lastTick;
+ if(state.activeTask==='A') state.taskA+=d;
+ else state.taskB+=d;
+ state.lastTick=performance.now();
+}
+
+function startPause(){
+ if(state.running){
+  commit();
+  state.running=false;
+  state.lastTick=null;
+ } else {
+  state.running=true;
+  state.lastTick=performance.now();
+ }
+ save();
+}
+
+function switchTask(){
+ if(!state.running) return;
+
+ commit();
+
+ const from=state.activeTask;
+ const to=from==='A'?'B':'A';
+
+ let duration=0;
+
+ if(state.log.length===0){
+   duration = from==='A' ? state.taskA : state.taskB;
+ } else {
+   const prev=state.log[0];
+   duration =
+      from==='A'
+      ? state.taskA-prev.taskASnapshot
+      : state.taskB-prev.taskBSnapshot;
+ }
+
+ state.activeTask=to;
+ state.lastTick=performance.now();
+
+ state.log.unshift({
+   timestamp:stamp(),
+   from,
+   to,
+   duration,
+   taskASnapshot:state.taskA,
+   taskBSnapshot:state.taskB
+ });
+
+ renderLog();
+ updateStats();
+ save();
+}
+
+function resetAll(){
+ state={
+   running:false,
+   activeTask:'A',
+   taskA:0,
+   taskB:0,
+   log:[],
+   lastTick:null
+ };
+ localStorage.removeItem(KEY);
+ renderLog();
+ updateStats();
+}
+
+function updateStats(){
+ document.getElementById('switchCount').textContent='Switches: '+state.log.length;
+ document.getElementById('activeLabel').textContent='Active: '+state.activeTask;
+}
+
+function renderLog(){
+ logBody.innerHTML='';
+ state.log.slice(0,25).forEach((e,i)=>{
+   const tr=document.createElement('tr');
+   tr.innerHTML=`
+   <td>${state.log.length-i}</td>
+   <td>${e.timestamp}</td>
+   <td>${e.from}</td>
+   <td>${e.to}</td>
+   <td>${fmt(e.duration)}</td>`;
+   logBody.appendChild(tr);
+ });
+}
+
+function csv(){
+ const rows=[['timestamp','from','to','duration_ms']];
+ state.log.slice().reverse().forEach(r=>{
+   rows.push([
+     r.timestamp,
+     r.from,
+     r.to,
+     Math.round(r.duration)
+   ]);
+ });
+
+ const text=rows.map(r=>r.join(',')).join('\n');
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(new Blob([text],{type:'text/csv'}));
+ a.download='task-switch-log.csv';
+ a.click();
+}
+
+function resize(){
+ const r=canvas.parentElement.getBoundingClientRect();
+ canvas.width=r.width*devicePixelRatio;
+ canvas.height=r.height*devicePixelRatio;
+ ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+}
+
+function draw(){
+ const w=canvas.clientWidth,h=canvas.clientHeight;
+ ctx.clearRect(0,0,w,h);
+
+ let a=state.taskA,b=state.taskB;
+
+ if(state.running&&state.lastTick!=null){
+   const d=performance.now()-state.lastTick;
+   if(state.activeTask==='A') a+=d;
+   else b+=d;
+ }
+
+ ctx.fillStyle=state.activeTask==='A'?'rgba(59,130,246,.30)':'rgba(59,130,246,.12)';
+ ctx.fillRect(0,0,w,h/2);
+
+ ctx.fillStyle=state.activeTask==='B'?'rgba(16,185,129,.30)':'rgba(16,185,129,.12)';
+ ctx.fillRect(0,h/2,w,h/2);
+
+ ctx.textAlign='center';
+ ctx.fillStyle='white';
+
+ ctx.font='bold 34px sans-serif';
+ ctx.fillText('TASK A',w/2,60);
+
+ ctx.font='bold 72px monospace';
+ ctx.fillText(fmt(a),w/2,h/4+40);
+
+ ctx.font='bold 34px sans-serif';
+ ctx.fillText('TASK B',w/2,h/2+60);
+
+ ctx.font='bold 72px monospace';
+ ctx.fillText(fmt(b),w/2,h*0.75+40);
+
+ requestAnimationFrame(draw);
+}
+
+document.getElementById('startBtn').onclick=startPause;
+document.getElementById('resetBtn').onclick=resetAll;
+document.getElementById('csvBtn').onclick=csv;
+document.getElementById('fullscreenBtn').onclick=()=>{
+ document.fullscreenElement
+ ? document.exitFullscreen()
+ : document.documentElement.requestFullscreen();
+};
+
+window.addEventListener('keydown',e=>{
+ if(e.repeat)return;
+ if(e.code==='Space'){e.preventDefault();switchTask();}
+ if(e.key.toLowerCase()==='s')startPause();
+ if(e.key.toLowerCase()==='r')resetAll();
+ if(e.key.toLowerCase()==='f')document.getElementById('fullscreenBtn').click();
+});
+
+window.addEventListener('beforeunload',()=>{
+ commit();
+ save();
+});
+
+window.addEventListener('resize',resize);
+
+resize();
+renderLog();
+updateStats();
+draw();
+</script>
+</body>
+</html>
