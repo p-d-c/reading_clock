@@ -92,12 +92,16 @@ function save(){
 }));
 }
 
-function fmt(ms){
- let h=Math.floor(ms/3600000),
- m=Math.floor(ms%3600000/60000),
- s=Math.floor(ms%60000/1000),
- x=Math.floor(ms%1000);
- return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(x).padStart(3,'0')}`;
+function fmt(value) {
+    if (typeof value !== "number" || isNaN(value)) {
+        return "0:00";
+    }
+
+    const totalSeconds = Math.floor(value / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+
+    return `${minutes}:${seconds.toString().padStart(2, "00")}`;
 }
 
 function stamp(){
