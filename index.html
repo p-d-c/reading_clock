@@ -45,7 +45,14 @@ th,td{padding:8px;border-bottom:1px solid var(--border);text-align:left}
 <div class="panel">
 <h3>Recent Switches</h3>
 <table>
-<thead><tr><th>#</th><th>Time</th><th>From</th><th>To</th><th>Duration</th></tr></thead>
+<thead>
+<tr>
+<th>Cycle</th>
+<th>Completed</th>
+<th>A</th>
+<th>B</th>
+</tr>
+</thead>
 <tbody id="log"></tbody>
 </table>
 </div>
@@ -56,19 +63,33 @@ const KEY='clock_v3';
 const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
 const logBody=document.getElementById('log');
 
-let state=JSON.parse(localStorage.getItem(KEY)||'null')||{
-running:false,activeTask:'A',taskA:0,taskB:0,log:[]
+const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+
+let state = saved || {
+    running: false,
+    activeTask: 'A',
+    taskA: 0,
+    taskB: 0,
+    log: []
 };
-state.running=false;
-state.lastTick=null;
+
+let pendingADuration = null;
+
+if (saved) {
+    pendingADuration = saved.pendingADuration ?? null;
+}
+
+state.running = false;
+state.lastTick = null;
 
 function save(){
- localStorage.setItem(KEY,JSON.stringify({
-  activeTask:state.activeTask,
-  taskA:state.taskA,
-  taskB:state.taskB,
-  log:state.log
- }));
+ localStorage.setItem(KEY, JSON.stringify({
+    activeTask: state.activeTask,
+    taskA: state.taskA,
+    taskB: state.taskB,
+    log: state.log,
+    pendingADuration
+}));
 }
 
 function fmt(ms){
@@ -114,7 +135,25 @@ function switchTask(){
  const from=state.activeTask;
  const to=from==='A'?'B':'A';
 
- let duration=0;
+ let pendingADuration = null;
+
+ if (from === 'A') {
+
+    pendingADuration = duration;
+
+} else {
+
+    if (pendingADuration !== null) {
+
+        state.log.unshift({
+            completed: stamp(),
+            aDuration: pendingADuration,
+            bDuration: duration
+        });
+
+        pendingADuration = null;
+    }
+}
 
  if(state.log.length===0){
    duration = from==='A' ? state.taskA : state.taskB;
@@ -143,18 +182,21 @@ function switchTask(){
  save();
 }
 
-function resetAll(){
- state={
-   running:false,
-   activeTask:'A',
-   taskA:0,
-   taskB:0,
-   log:[],
-   lastTick:null
- };
- localStorage.removeItem(KEY);
- renderLog();
- updateStats();
+function resetAll() {
+
+    pendingADuration = null;
+
+    state = {
+        running: false,
+        activeTask: 'A',
+        taskA: 0,
+        taskB: 0,
+        log: [],
+        lastTick: null
+    };
+
+    localStorage.removeItem(KEY);
+    renderLog();
 }
 
 function updateStats(){
@@ -163,17 +205,22 @@ function updateStats(){
 }
 
 function renderLog(){
- logBody.innerHTML='';
- state.log.slice(0,25).forEach((e,i)=>{
-   const tr=document.createElement('tr');
-   tr.innerHTML=`
-   <td>${state.log.length-i}</td>
-   <td>${e.timestamp}</td>
-   <td>${e.from}</td>
-   <td>${e.to}</td>
-   <td>${fmt(e.duration)}</td>`;
-   logBody.appendChild(tr);
- });
+
+    logBody.innerHTML = '';
+
+    state.log.forEach((e, i) => {
+
+        const tr = document.createElement('tr');
+
+        tr.innerHTML = `
+            <td>${state.log.length - i}</td>
+            <td>${e.completed}</td>
+            <td>${fmt(e.aDuration)}</td>
+            <td>${fmt(e.bDuration)}</td>
+        `;
+
+        logBody.appendChild(tr);
+    });
 }
 
 function downloadCSV() {
@@ -184,23 +231,25 @@ function downloadCSV() {
     }
 
     const headers = [
-        "timestamp",
-        "from",
-        "to",
-        "duration_ms",
-        "duration_formatted"
-    ];
+    "cycle",
+    "completed",
+    "a_duration_ms",
+    "b_duration_ms",
+    "a_duration",
+    "b_duration"
+];
 
     const rows = state.log
-        .slice()
-        .reverse()
-        .map(entry => [
-            entry.timestamp,
-            entry.from,
-            entry.to,
-            Math.round(entry.duration),
-            fmt(entry.duration)
-        ]);
+    .slice()
+    .reverse()
+    .map((entry, index) => [
+        index + 1,
+        entry.completed,
+        Math.round(entry.aDuration),
+        Math.round(entry.bDuration),
+        fmt(entry.aDuration),
+        fmt(entry.bDuration)
+    ]);
 
     const csvContent = [headers, ...rows]
         .map(row =>
