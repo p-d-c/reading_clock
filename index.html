@@ -127,9 +127,8 @@ function startPause(){
  save();
 }
 
-function switchTask(){
-
-    if(!state.running) return;
+function switchTask() {
+    if (!state.running) return;
 
     commit();
 
@@ -138,45 +137,29 @@ function switchTask(){
 
     let duration;
 
-    if (from === 'A') {
-        duration = state.taskA;
+    // Calculate elapsed time for the task being left
+    if (state.log.length === 0) {
+        duration = from === 'A' ? state.taskA : state.taskB;
     } else {
-        duration = state.taskB;
+        const prev = state.log[0];
+
+        duration =
+            from === 'A'
+                ? state.taskA - (prev.taskASnapshot || 0)
+                : state.taskB - (prev.taskBSnapshot || 0);
     }
 
-    if (state.log.length > 0) {
+    // Record the switch
+    state.log.unshift({
+        timestamp: stamp(),
+        from,
+        to,
+        duration,
+        taskASnapshot: state.taskA,
+        taskBSnapshot: state.taskB
+    });
 
-        const lastCycle = state.log[0];
-
-        if (from === 'A' && lastCycle.aDuration !== undefined) {
-            duration = state.taskA - lastCycle.aTotalSnapshot;
-        }
-
-        if (from === 'B' && lastCycle.bDuration !== undefined) {
-            duration = state.taskB - lastCycle.bTotalSnapshot;
-        }
-    }
-
-    if (from === 'A') {
-
-        pendingADuration = duration;
-
-    } else {
-
-        if (pendingADuration !== null) {
-
-            state.log.unshift({
-                completed: stamp(),
-                aDuration: pendingADuration,
-                bDuration: duration,
-                aTotalSnapshot: state.taskA,
-                bTotalSnapshot: state.taskB
-            });
-
-            pendingADuration = null;
-        }
-    }
-
+    // Switch active task
     state.activeTask = to;
     state.lastTick = performance.now();
 
