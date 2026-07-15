@@ -70,10 +70,10 @@ let state = saved || {
     activeTask: 'A',
     taskA: 0,
     taskB: 0,
-    log: []
+    log: [],
+    pendingADuration: null,
 };
 
-let pendingADuration = null;
 
 if (saved) {
     pendingADuration = saved.pendingADuration ?? null;
@@ -133,33 +133,46 @@ function switchTask() {
     commit();
 
     const from = state.activeTask;
-    const to = from === 'A' ? 'B' : 'A';
+    const to = from === "A" ? "B" : "A";
 
     let duration;
 
-    // Calculate elapsed time for the task being left
-    if (state.log.length === 0) {
-        duration = from === 'A' ? state.taskA : state.taskB;
-    } else {
-        const prev = state.log[0];
+    // Calculate time spent on current task
+    if (from === "A") {
+        if (state.log.length === 0) {
+            duration = state.taskA;
+        } else {
+            const prev = state.log[0];
+            duration = state.taskA - (prev.aTotalSnapshot || 0);
+        }
 
-        duration =
-            from === 'A'
-                ? state.taskA - (prev.taskASnapshot || 0)
-                : state.taskB - (prev.taskBSnapshot || 0);
+        // Save A time until B finishes
+        state.pendingADuration = duration;
+
+    } else {
+        if (state.log.length === 0) {
+            duration = state.taskB;
+        } else {
+            const prev = state.log[0];
+            duration = state.taskB - (prev.bTotalSnapshot || 0);
+        }
+
+        // Complete the A+B cycle
+        if (state.pendingADuration !== null) {
+
+            state.log.unshift({
+                completed: stamp(),
+                aDuration: state.pendingADuration,
+                bDuration: duration,
+                aTotalSnapshot: state.taskA,
+                bTotalSnapshot: state.taskB
+            });
+
+            state.pendingADuration = null;
+        }
     }
 
-    // Record the switch
-    state.log.unshift({
-        timestamp: stamp(),
-        from,
-        to,
-        duration,
-        taskASnapshot: state.taskA,
-        taskBSnapshot: state.taskB
-    });
-
-    // Switch active task
+    // Switch tasks
     state.activeTask = to;
     state.lastTick = performance.now();
 
