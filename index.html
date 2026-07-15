@@ -128,58 +128,61 @@ function startPause(){
 }
 
 function switchTask(){
- if(!state.running) return;
 
- commit();
+    if(!state.running) return;
 
- const from=state.activeTask;
- const to=from==='A'?'B':'A';
+    commit();
 
- let pendingADuration = null;
+    const from = state.activeTask;
+    const to = from === 'A' ? 'B' : 'A';
 
- if (from === 'A') {
+    let duration;
 
-    pendingADuration = duration;
-
-} else {
-
-    if (pendingADuration !== null) {
-
-        state.log.unshift({
-            completed: stamp(),
-            aDuration: pendingADuration,
-            bDuration: duration
-        });
-
-        pendingADuration = null;
+    if (from === 'A') {
+        duration = state.taskA;
+    } else {
+        duration = state.taskB;
     }
-}
 
- if(state.log.length===0){
-   duration = from==='A' ? state.taskA : state.taskB;
- } else {
-   const prev=state.log[0];
-   duration =
-      from==='A'
-      ? state.taskA-prev.taskASnapshot
-      : state.taskB-prev.taskBSnapshot;
- }
+    if (state.log.length > 0) {
 
- state.activeTask=to;
- state.lastTick=performance.now();
+        const lastCycle = state.log[0];
 
- state.log.unshift({
-   timestamp:stamp(),
-   from,
-   to,
-   duration,
-   taskASnapshot:state.taskA,
-   taskBSnapshot:state.taskB
- });
+        if (from === 'A' && lastCycle.aDuration !== undefined) {
+            duration = state.taskA - lastCycle.aTotalSnapshot;
+        }
 
- renderLog();
- updateStats();
- save();
+        if (from === 'B' && lastCycle.bDuration !== undefined) {
+            duration = state.taskB - lastCycle.bTotalSnapshot;
+        }
+    }
+
+    if (from === 'A') {
+
+        pendingADuration = duration;
+
+    } else {
+
+        if (pendingADuration !== null) {
+
+            state.log.unshift({
+                completed: stamp(),
+                aDuration: pendingADuration,
+                bDuration: duration,
+                aTotalSnapshot: state.taskA,
+                bTotalSnapshot: state.taskB
+            });
+
+            pendingADuration = null;
+        }
+    }
+
+    state.activeTask = to;
+    state.lastTick = performance.now();
+
+    renderLog();
+    updateStats();
+    save();
 }
 
 function resetAll() {
@@ -197,6 +200,8 @@ function resetAll() {
 
     localStorage.removeItem(KEY);
     renderLog();
+    updateStats();
+    save();
 }
 
 function updateStats(){
